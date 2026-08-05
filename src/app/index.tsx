@@ -30,15 +30,23 @@ const TEXTOS = {
   ca: { factura: 'FACTURA', cliente: 'Client', concepto: 'Concepte', total: 'Total' },
 };
 
-type Factura = { id: string; cliente: string; concepto: string; importe: string; fecha: string; pagada?: boolean; numero?: string };
+type ItemFactura = { descripcion: string; cantidad: string; precio: string };
+type Factura = { id: string; cliente: string; items: ItemFactura[]; importe: string; fecha: string; pagada?: boolean; numero?: string };
 
 export default function DocumentosScreen() {
   const { colors, gradients, isDark, mode, setMode } = useTheme();
   const styles = getStyles(colors);
 
   const [cliente, setCliente] = useState('');
-  const [concepto, setConcepto] = useState('');
-  const [importe, setImporte] = useState('');
+  const [items, setItems] = useState<ItemFactura[]>([{ descripcion: '', cantidad: '1', precio: '' }]);
+
+  const agregarItem = () => setItems([...items, { descripcion: '', cantidad: '1', precio: '' }]);
+  const quitarItem = (idx: number) => setItems(items.filter((_, i) => i !== idx));
+  const actualizarItem = (idx: number, campo: keyof ItemFactura, valor: string) => {
+    const nuevos = [...items];
+    nuevos[idx] = { ...nuevos[idx], [campo]: valor };
+    setItems(nuevos);
+  };
   const [generando, setGenerando] = useState(false);
   const [historial, setHistorial] = useState<Factura[]>([]);
   const [mostrarHistorial, setMostrarHistorial] = useState(false);
@@ -114,7 +122,7 @@ export default function DocumentosScreen() {
     }
     const encabezado = 'Cliente,Concepto,Importe,Fecha,Estado\n';
     const filas = historial
-      .map((f) => `"${f.cliente}","${f.concepto}",${f.importe},"${f.fecha}",${f.pagada ? 'Pagada' : 'Pendiente'}`)
+      .map((f) => `"${f.cliente}","${(f.items || []).map((it) => it.descripcion).join(' | ')}",${f.importe},"${f.fecha}",${f.pagada ? 'Pagada' : 'Pendiente'}`)
       .join('\n');
     const csv = encabezado + filas;
 
@@ -141,7 +149,7 @@ export default function DocumentosScreen() {
   const generarFactura = async () => {
     setGenerando(true);
     const numeroFactura = `FAC-${new Date().getFullYear()}-${String(historial.length + 1).padStart(3, '0')}`;
-    const subtotal = parseFloat(importe) || 0;
+    const subtotal = items.reduce((acc, it) => acc + (parseFloat(it.cantidad) || 0) * (parseFloat(it.precio) || 0), 0);
     const iva = subtotal * 0.21;
     const totalConIva = subtotal + iva;
     try {
@@ -156,6 +164,13 @@ export default function DocumentosScreen() {
            ${perfil.direccion ? `<p style="margin:0;color:#64748B;font-size:13px;">${perfil.direccion}</p>` : ''}`
         : '';
 
+      const itemsHtml = items.map((it) => {
+        const cant = parseFloat(it.cantidad) || 0;
+        const precio = parseFloat(it.precio) || 0;
+        const lineaTotal = (cant * precio).toFixed(2);
+        return `<tr style="border-top:1px solid #E2E8F0;"><td style="padding:10px 0;">${it.descripcion || '—'}</td><td style="padding:10px 0;text-align:center;color:#64748B;">${cant}</td><td style="padding:10px 0;text-align:right;color:#64748B;">${precio.toFixed(2)} €</td><td style="padding:10px 0;text-align:right;font-weight:600;">${lineaTotal} €</td></tr>`;
+      }).join('');
+
       const html = `
         <html>
           <body style="font-family: -apple-system, Helvetica, sans-serif; padding: 48px; color: #0F172A;">
@@ -166,9 +181,11 @@ export default function DocumentosScreen() {
               <p style="color: #64748B; margin: 4px 0 0;">${fecha}</p>
             </div>
             <table style="width: 100%; border-collapse: collapse;">
-              <tr><td style="padding:12px 0;color:#64748B;">${t.cliente}</td><td style="padding:12px 0;text-align:right;font-weight:600;">${cliente || '—'}</td></tr>
-              <tr style="border-top:1px solid #E2E8F0;"><td style="padding:12px 0;color:#64748B;">${t.concepto}</td><td style="padding:12px 0;text-align:right;font-weight:600;">${concepto || '—'}</td></tr>
-              <tr style="border-top:2px solid ${colorPlantilla};"><td style="padding:16px 0;font-size:18px;font-weight:700;">${t.total}</td><td style="padding:16px 0;text-align:right;font-size:18px;font-weight:700;color:${colorPlantilla};">${importe || '0'} €</td></tr>
+              <tr><td colspan="4" style="padding:12px 0;color:#64748B;">${t.cliente}: <strong>${cliente || '—'}</strong></td></tr>
+              <tr style="border-bottom:2px solid ${colorPlantilla};"><td style="padding:8px 0;color:#64748B;font-size:12px;">${t.concepto}</td><td style="padding:8px 0;text-align:center;color:#64748B;font-size:12px;">CANT.</td><td style="padding:8px 0;text-align:right;color:#64748B;font-size:12px;">PRECIO</td><td style="padding:8px 0;text-align:right;color:#64748B;font-size:12px;">SUBT.</td></tr>
+              ${itemsHtml}
+              <tr><td colspan="4" style="padding-top:16px;text-align:right;color:#64748B;">Subtotal: ${subtotal.toFixed(2)} € &nbsp;&nbsp; IVA (21%): ${iva.toFixed(2)} €</td></tr>
+              <tr style="border-top:2px solid ${colorPlantilla};"><td colspan="3" style="padding:16px 0;font-size:18px;font-weight:700;">${t.total}</td><td style="padding:16px 0;text-align:right;font-size:18px;font-weight:700;color:${colorPlantilla};">${totalConIva.toFixed(2)} €</td></tr>
             </table>
           </body>        </html>
       `;
@@ -180,10 +197,9 @@ export default function DocumentosScreen() {
         await Sharing.shareAsync(uri);
       }
 
-      await guardarEnHistorial({ id: Date.now().toString(), cliente, concepto, importe: totalConIva.toFixed(2), fecha, pagada: false, numero: numeroFactura });
+      await guardarEnHistorial({ id: Date.now().toString(), cliente, items, importe: totalConIva.toFixed(2), fecha, pagada: false, numero: numeroFactura });
       setCliente('');
-      setConcepto('');
-      setImporte('');
+      setItems([{ descripcion: '', cantidad: '1', precio: '' }]);
     } finally {
       setGenerando(false);
     }
@@ -196,6 +212,9 @@ export default function DocumentosScreen() {
       const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType } = await import('docx');
       const fecha = new Date().toLocaleDateString();
       const t = TEXTOS[idioma];
+      const subtotal = items.reduce((acc, it) => acc + (parseFloat(it.cantidad) || 0) * (parseFloat(it.precio) || 0), 0);
+      const iva = subtotal * 0.21;
+      const totalConIva = subtotal + iva;
 
       const doc = new Document({
         sections: [{
@@ -213,16 +232,16 @@ export default function DocumentosScreen() {
                     new TableCell({ children: [new Paragraph(cliente)] }),
                   ],
                 }),
-                new TableRow({
+                ...items.map((it) => new TableRow({
                   children: [
-                    new TableCell({ children: [new Paragraph(t.concepto)] }),
-                    new TableCell({ children: [new Paragraph(concepto)] }),
+                    new TableCell({ children: [new Paragraph(`${it.descripcion} (x${it.cantidad})`)] }),
+                    new TableCell({ children: [new Paragraph(`${(((parseFloat(it.cantidad) || 0) * (parseFloat(it.precio) || 0))).toFixed(2)} €`)] }),
                   ],
-                }),
+                })),
                 new TableRow({
                   children: [
                     new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: t.total, bold: true })] })] }),
-                    new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: `${importe} €`, bold: true })] })] }),
+                    new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: `${totalConIva.toFixed(2)} €`, bold: true })] })] }),
                   ],
                 }),
               ],
@@ -258,7 +277,9 @@ export default function DocumentosScreen() {
   const LIMITE_GRATIS = 3;
   const esPremium = false; // TODO: conectar con RevenueCat.getCustomerInfo()
   const alcanzoLimite = !esPremium && historial.length >= LIMITE_GRATIS;
-  const camposCompletos = cliente && concepto && importe && !alcanzoLimite;
+  const subtotalItems = items.reduce((acc, it) => acc + (parseFloat(it.cantidad) || 0) * (parseFloat(it.precio) || 0), 0);
+  const itemsValidos = items.every((it) => it.descripcion && it.cantidad && it.precio);
+  const camposCompletos = cliente && items.length > 0 && itemsValidos && !alcanzoLimite;
   const nextMode = mode === 'system' ? 'light' : mode === 'light' ? 'dark' : 'system';
   const modeIcon = mode === 'system' ? '🔄' : mode === 'light' ? '☀️' : '🌙';
 
@@ -314,7 +335,9 @@ export default function DocumentosScreen() {
                 <View style={[styles.historialAccent, { backgroundColor: item.pagada ? colors.success : colors.primary }]} />
                 <View style={styles.historialInfo}>
                   <Text style={styles.historialCliente}>{item.cliente}</Text>
-                  <Text style={styles.historialConcepto}>{item.concepto}</Text>
+                  <Text style={styles.historialConcepto}>
+                    {item.items?.[0]?.descripcion || ''}{item.items && item.items.length > 1 ? ` +${item.items.length - 1} más` : ''}
+                  </Text>
                   <Text style={styles.historialFecha}>{item.fecha}</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end', gap: 6 }}>
@@ -339,8 +362,32 @@ export default function DocumentosScreen() {
             }}>
             <View style={styles.card}>
               <Field colors={colors} label="Cliente" value={cliente} onChangeText={setCliente} placeholder="Nombre del cliente" />
-              <Field colors={colors} label="Concepto" value={concepto} onChangeText={setConcepto} placeholder="Descripción del servicio" />
-              <Field colors={colors} label="Importe" value={importe} onChangeText={setImporte} placeholder="0.00" keyboardType="numeric" suffix="€" />
+
+              <Text style={styles.label}>Conceptos</Text>
+              {items.map((it, idx) => (
+                <View key={idx} style={{ marginBottom: 10, backgroundColor: colors.background, borderRadius: Radius.md, borderWidth: 1, borderColor: colors.border, padding: 10 }}>
+                  <Field colors={colors} label="" value={it.descripcion} onChangeText={(v: string) => actualizarItem(idx, 'descripcion', v)} placeholder="Descripción" />
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
+                    <View style={{ flex: 1 }}>
+                      <Field colors={colors} label="" value={it.cantidad} onChangeText={(v: string) => actualizarItem(idx, 'cantidad', v)} placeholder="Cant." keyboardType="numeric" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Field colors={colors} label="" value={it.precio} onChangeText={(v: string) => actualizarItem(idx, 'precio', v)} placeholder="Precio" keyboardType="numeric" suffix="€" />
+                    </View>
+                    {items.length > 1 && (
+                      <Pressable onPress={() => quitarItem(idx)} style={{ justifyContent: 'center', paddingHorizontal: 8 }}>
+                        <Text style={{ color: colors.danger, fontSize: 18 }}>✕</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                </View>
+              ))}
+              <Pressable onPress={agregarItem} style={{ alignSelf: 'flex-start', marginBottom: 12 }}>
+                <Text style={{ color: colors.primary, fontWeight: '700' }}>+ Añadir concepto</Text>
+              </Pressable>
+              <Text style={{ textAlign: 'right', color: colors.text, fontWeight: '700', marginBottom: 12 }}>
+                Subtotal: {subtotalItems.toFixed(2)} € · IVA: {(subtotalItems * 0.21).toFixed(2)} € · Total: {(subtotalItems * 1.21).toFixed(2)} €
+              </Text>
 
               <View style={styles.field}>
                 <Text style={styles.label}>Idioma del PDF</Text>
