@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -357,7 +358,7 @@ export default function DocumentosScreen() {
   const itemsValidos = items.every((it) => it.descripcion && it.cantidad && it.precio);
   const camposCompletos = cliente && items.length > 0 && itemsValidos && !alcanzoLimite;
   const nextMode = mode === 'system' ? 'light' : mode === 'light' ? 'dark' : 'system';
-  const modeIcon = mode === 'system' ? '🔄' : mode === 'light' ? '☀️' : '🌙';
+  const modeIcon = mode === 'system' ? 'sync-outline' : mode === 'light' ? 'sunny-outline' : 'moon-outline';
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -371,10 +372,10 @@ export default function DocumentosScreen() {
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Pressable style={styles.themeBtn} onPress={() => setModalPerfil(true)}>
-              <Text style={styles.themeBtnText}>🏢</Text>
+              <Ionicons name="business-outline" size={18} color="#fff" />
             </Pressable>
             <Pressable style={styles.themeBtn} onPress={() => setMode(nextMode)}>
-              <Text style={styles.themeBtnText}>{modeIcon}</Text>
+              <Ionicons name={modeIcon as any} size={18} color="#fff" />
             </Pressable>
           </View>
         </View>
@@ -565,7 +566,7 @@ export default function DocumentosScreen() {
                 <Image source={{ uri: perfil.logo }} style={{ width: 64, height: 64, borderRadius: Radius.md, marginBottom: 8 }} />
               ) : (
                 <View style={{ width: 64, height: 64, borderRadius: Radius.md, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
-                  <Text style={{ fontSize: 24 }}>🏢</Text>
+                  <Ionicons name="business-outline" size={24} color={colors.textSecondary} />
                 </View>
               )}
               <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 13 }}>

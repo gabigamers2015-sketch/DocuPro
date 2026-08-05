@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { Platform, View, Text, Pressable, StyleSheet, SafeAreaView, Animated, Modal, TextInput } from 'react-native';
+import { Platform, View, Text, Pressable, StyleSheet, SafeAreaView, Alert, Animated, Modal, TextInput } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -41,8 +40,6 @@ async function guardarOCompartir(pdfBytes: Uint8Array, nombre: string) {
   }
 }
 
-type ToastTipo = 'success' | 'error';
-
 export default function ConversorScreen() {
   const { colors, gradients } = useTheme();
   const styles = getStyles(colors);
@@ -50,22 +47,11 @@ export default function ConversorScreen() {
   const [modalMarca, setModalMarca] = useState(false);
   const [textoMarca, setTextoMarca] = useState('');
   const [modalFirma, setModalFirma] = useState(false);
-  const [toast, setToast] = useState<{ tipo: ToastTipo; mensaje: string } | null>(null);
   const anim = useRef(new Animated.Value(0)).current;
-  const toastAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(anim, { toValue: 1, duration: 450, useNativeDriver: true }).start();
   }, []);
-
-  const mostrarToast = (tipo: ToastTipo, mensaje: string) => {
-    setToast({ tipo, mensaje });
-    toastAnim.setValue(0);
-    Animated.spring(toastAnim, { toValue: 1, useNativeDriver: true, friction: 7 }).start();
-    setTimeout(() => {
-      Animated.timing(toastAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => setToast(null));
-    }, 2600);
-  };
 
   const convertirImagenAPdf = async () => {
     const result = await DocumentPicker.getDocumentAsync({ type: 'image/*' });
@@ -80,9 +66,6 @@ export default function ConversorScreen() {
         const { uri: pdfUri } = await Print.printToFileAsync({ html });
         await Sharing.shareAsync(pdfUri);
       }
-      mostrarToast('success', '¡PDF creado desde tu imagen!');
-    } catch (e) {
-      mostrarToast('error', 'No se pudo convertir la imagen.');
     } finally {
       setCargando(null);
     }
@@ -91,7 +74,7 @@ export default function ConversorScreen() {
   const unirPdfs = async () => {
     const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', multiple: true });
     if (result.canceled || result.assets.length < 2) {
-      if (!result.canceled) mostrarToast('error', 'Selecciona al menos 2 PDFs para unir');
+      if (!result.canceled) Alert.alert('Selecciona al menos 2 PDFs para unir');
       return;
     }
     setCargando('unir');
@@ -108,9 +91,8 @@ export default function ConversorScreen() {
       }
       const pdfBytes = await pdfUnido.save();
       await guardarOCompartir(pdfBytes, 'documento-unido.pdf');
-      mostrarToast('success', `¡${result.assets.length} PDFs unidos!`);
     } catch (e) {
-      mostrarToast('error', 'No se pudieron unir los PDFs. Verifica que sean archivos válidos.');
+      Alert.alert('Error', 'No se pudieron unir los PDFs. Verifica que sean archivos válidos.');
     } finally {
       setCargando(null);
     }
@@ -128,9 +110,8 @@ export default function ConversorScreen() {
       const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true });
       const pdfBytes = await pdf.save({ useObjectStreams: true });
       await guardarOCompartir(pdfBytes, 'documento-comprimido.pdf');
-      mostrarToast('success', '¡PDF comprimido!');
     } catch (e) {
-      mostrarToast('error', 'No se pudo comprimir el PDF.');
+      Alert.alert('Error', 'No se pudo comprimir el PDF.');
     } finally {
       setCargando(null);
     }
@@ -172,9 +153,8 @@ export default function ConversorScreen() {
 
       const pdfBytes = await pdf.save();
       await guardarOCompartir(pdfBytes, 'documento-marca-agua.pdf');
-      mostrarToast('success', '¡Marca de agua aplicada!');
     } catch (e) {
-      mostrarToast('error', 'No se pudo aplicar la marca de agua.');
+      Alert.alert('Error', 'No se pudo aplicar la marca de agua.');
     } finally {
       setCargando(null);
       setPdfParaMarca(null);
@@ -220,9 +200,8 @@ export default function ConversorScreen() {
 
       const pdfBytes = await pdf.save();
       await guardarOCompartir(pdfBytes, 'documento-firmado.pdf');
-      mostrarToast('success', '¡Documento firmado!');
     } catch (e) {
-      mostrarToast('error', 'No se pudo aplicar la firma.');
+      Alert.alert('Error', 'No se pudo aplicar la firma.');
     } finally {
       setCargando(null);
       setPdfParaFirma(null);
@@ -231,7 +210,7 @@ export default function ConversorScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <LinearGradient colors={gradients.header as any} style={styles.header} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+      <LinearGradient colors={gradients.header} style={styles.header} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
         <View style={styles.headerDecoCircle1} />
         <View style={styles.headerDecoCircle2} />
         <Text style={styles.eyebrow}>HERRAMIENTAS</Text>
@@ -245,14 +224,11 @@ export default function ConversorScreen() {
           transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
         }}>
         <View style={styles.content}>
-          <Text style={styles.sectionTitle}>CREAR</Text>
-          <Tool colors={colors} icon="image-outline" accent="#6366F1" title="Imagen → PDF" desc="Convierte fotos en documentos PDF" loading={cargando === 'imagen'} onPress={convertirImagenAPdf} />
-
-          <Text style={[styles.sectionTitle, { marginTop: Spacing.sm }]}>EDITAR Y PROTEGER</Text>
-          <Tool colors={colors} icon="layers-outline" accent="#0EA5E9" title="Unir PDFs" desc="Combina varios PDFs en uno solo" loading={cargando === 'unir'} onPress={unirPdfs} />
-          <Tool colors={colors} icon="contract-outline" accent="#10B981" title="Comprimir PDF" desc="Reduce el tamaño de tu archivo" loading={cargando === 'comprimir'} onPress={comprimirPdf} />
-          <Tool colors={colors} icon="water-outline" accent="#F59E0B" title="Marca de agua" desc="Añade texto superpuesto a tu PDF" loading={cargando === 'marca'} onPress={abrirMarcaAgua} />
-          <Tool colors={colors} icon="create-outline" accent="#EC4899" title="Firmar PDF" desc="Firma con el dedo y estampa en el documento" loading={cargando === 'firma'} onPress={abrirFirma} />
+          <Tool colors={colors} icon="🖼️" title="Imagen → PDF" desc="Convierte fotos en documentos PDF" loading={cargando === 'imagen'} onPress={convertirImagenAPdf} />
+          <Tool colors={colors} icon="📎" title="Unir PDFs" desc="Combina varios PDFs en uno solo" loading={cargando === 'unir'} onPress={unirPdfs} />
+          <Tool colors={colors} icon="🗜️" title="Comprimir PDF" desc="Reduce el tamaño de tu archivo" loading={cargando === 'comprimir'} onPress={comprimirPdf} />
+          <Tool colors={colors} icon="💧" title="Marca de agua" desc="Añade texto superpuesto a tu PDF" loading={cargando === 'marca'} onPress={abrirMarcaAgua} />
+          <Tool colors={colors} icon="✍️" title="Firmar PDF" desc="Firma con el dedo y estampa en el documento" loading={cargando === 'firma'} onPress={abrirFirma} />
         </View>
       </Animated.View>
 
@@ -285,7 +261,7 @@ export default function ConversorScreen() {
           <Text style={[styles.modalTitle, { padding: Spacing.lg }]}>Dibuja tu firma</Text>
           <SignatureScreen
             onOK={aplicarFirma}
-            onEmpty={() => mostrarToast('error', 'Dibuja una firma antes de continuar')}
+            onEmpty={() => Alert.alert('Dibuja una firma antes de continuar')}
             descriptionText=""
             webStyle={`.m-signature-pad--footer {display: flex; justify-content: center; gap: 16px; padding: 20px;} .button {background-color: ${colors.primary}; color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold;}`}
           />
@@ -294,27 +270,11 @@ export default function ConversorScreen() {
           </Pressable>
         </SafeAreaView>
       </Modal>
-
-      {toast && (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.toast,
-            {
-              backgroundColor: toast.tipo === 'success' ? colors.success : colors.danger,
-              opacity: toastAnim,
-              transform: [{ translateY: toastAnim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }],
-            },
-          ]}>
-          <Ionicons name={toast.tipo === 'success' ? 'checkmark-circle' : 'alert-circle'} size={20} color="#fff" />
-          <Text style={styles.toastText}>{toast.mensaje}</Text>
-        </Animated.View>
-      )}
     </SafeAreaView>
   );
 }
 
-function Tool({ icon, accent, title, desc, loading, onPress, colors }: any) {
+function Tool({ icon, title, desc, loading, onPress, colors }: any) {
   const styles = getStyles(colors);
   const scale = useRef(new Animated.Value(1)).current;
   const onPressIn = () => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true }).start();
@@ -323,20 +283,14 @@ function Tool({ icon, accent, title, desc, loading, onPress, colors }: any) {
   return (
     <Pressable onPressIn={onPressIn} onPressOut={onPressOut} onPress={onPress} disabled={loading}>
       <Animated.View style={[styles.tool, { transform: [{ scale }] }]}>
-        <View style={[styles.toolIcon, { backgroundColor: (accent || colors.primary) + '22' }]}>
-          {loading ? (
-            <Ionicons name="hourglass-outline" size={24} color={accent || colors.primary} />
-          ) : (
-            <Ionicons name={icon} size={24} color={accent || colors.primary} />
-          )}
+        <View style={styles.toolIcon}>
+          <Text style={styles.toolIconText}>{icon}</Text>
         </View>
         <View style={styles.toolInfo}>
           <Text style={styles.toolTitle}>{title}</Text>
-          <Text style={[styles.toolDesc, loading && { color: accent || colors.primary, fontWeight: '600' }]}>
-            {loading ? 'Procesando…' : desc}
-          </Text>
+          <Text style={styles.toolDesc}>{loading ? 'Procesando…' : desc}</Text>
         </View>
-        <Text style={[styles.chevron, { color: accent || colors.textSecondary }]}>›</Text>
+        <Text style={styles.chevron}>›</Text>
       </Animated.View>
     </Pressable>
   );
@@ -358,7 +312,6 @@ function getStyles(colors: any) {
     headerDecoCircle2: { position: 'absolute', width: 90, height: 90, borderRadius: 45, backgroundColor: 'rgba(255,255,255,0.06)', bottom: -20, left: -20 },
     eyebrow: { fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.85)', letterSpacing: 1.5, marginBottom: 6 },
     titulo: { fontSize: 28, fontWeight: '800', color: '#fff' },
-    sectionTitle: { fontSize: 12, fontWeight: '800', color: colors.textSecondary, letterSpacing: 1.2, marginBottom: 2 },
     tool: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -374,12 +327,12 @@ function getStyles(colors: any) {
       shadowOffset: { width: 0, height: 3 },
       elevation: 2,
     },
-    toolIcon: { width: 48, height: 48, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
+    toolIcon: { width: 48, height: 48, borderRadius: Radius.md, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
     toolIconText: { fontSize: 22 },
     toolInfo: { flex: 1 },
     toolTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
     toolDesc: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
-    chevron: { fontSize: 24 },
+    chevron: { fontSize: 24, color: colors.textSecondary },
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: Spacing.lg },
     modalCard: { backgroundColor: colors.surface, borderRadius: Radius.lg, padding: Spacing.lg, gap: Spacing.md },
     modalTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
@@ -397,23 +350,5 @@ function getStyles(colors: any) {
     modalBtnSecondaryText: { color: colors.textSecondary, fontWeight: '600' },
     modalBtnPrimary: { backgroundColor: colors.primary, paddingVertical: 10, paddingHorizontal: 20, borderRadius: Radius.md },
     modalBtnPrimaryText: { color: '#fff', fontWeight: '700' },
-    toast: {
-      position: 'absolute',
-      bottom: 24,
-      left: Spacing.lg,
-      right: Spacing.lg,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-      padding: Spacing.md,
-      borderRadius: Radius.lg,
-      shadowColor: '#000',
-      shadowOpacity: 0.2,
-      shadowRadius: 10,
-      shadowOffset: { width: 0, height: 4 },
-      elevation: 6,
-    },
-    toastIcon: { fontSize: 18 },
-    toastText: { color: '#fff', fontWeight: '700', flex: 1, fontSize: 14 },
   });
 }
