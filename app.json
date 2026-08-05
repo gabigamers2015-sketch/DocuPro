@@ -18,7 +18,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.tinolatiene.docupro"
+      "package": "com.tinolatiene.docupro",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",
@@ -44,7 +45,8 @@
           "color": "#4F46E5",
           "sounds": []
         }
-      ]
+      ],
+      "@react-native-firebase/app"
     ],
     "experiments": {
       "typedRoutes": true,

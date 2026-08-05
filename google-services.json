@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "544749312211",
+    "project_id": "docupro-3ecf7",
+    "storage_bucket": "docupro-3ecf7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:544749312211:android:2097e467881bcd6251dc26",
+        "android_client_info": {
+          "package_name": "com.tinolatiene.docupro"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDdAE9O4LbyW7XSf9k-vgcRv1i2eAIUjhM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
