@@ -30,7 +30,7 @@ const TEXTOS = {
   ca: { factura: 'FACTURA', cliente: 'Client', concepto: 'Concepte', total: 'Total' },
 };
 
-type Factura = { id: string; cliente: string; concepto: string; importe: string; fecha: string; pagada?: boolean };
+type Factura = { id: string; cliente: string; concepto: string; importe: string; fecha: string; pagada?: boolean; numero?: string };
 
 export default function DocumentosScreen() {
   const { colors, gradients, isDark, mode, setMode } = useTheme();
@@ -140,6 +140,10 @@ export default function DocumentosScreen() {
 
   const generarFactura = async () => {
     setGenerando(true);
+    const numeroFactura = `FAC-${new Date().getFullYear()}-${String(historial.length + 1).padStart(3, '0')}`;
+    const subtotal = parseFloat(importe) || 0;
+    const iva = subtotal * 0.21;
+    const totalConIva = subtotal + iva;
     try {
       const fecha = new Date().toLocaleDateString();
       const t = TEXTOS[idioma];
@@ -176,7 +180,7 @@ export default function DocumentosScreen() {
         await Sharing.shareAsync(uri);
       }
 
-      await guardarEnHistorial({ id: Date.now().toString(), cliente, concepto, importe, fecha, pagada: false });
+      await guardarEnHistorial({ id: Date.now().toString(), cliente, concepto, importe: totalConIva.toFixed(2), fecha, pagada: false, numero: numeroFactura });
       setCliente('');
       setConcepto('');
       setImporte('');
@@ -251,7 +255,10 @@ export default function DocumentosScreen() {
   const onPressIn = () => Animated.spring(btnScale, { toValue: 0.96, useNativeDriver: true }).start();
   const onPressOut = () => Animated.spring(btnScale, { toValue: 1, friction: 4, useNativeDriver: true }).start();
 
-  const camposCompletos = cliente && concepto && importe;
+  const LIMITE_GRATIS = 3;
+  const esPremium = false; // TODO: conectar con RevenueCat.getCustomerInfo()
+  const alcanzoLimite = !esPremium && historial.length >= LIMITE_GRATIS;
+  const camposCompletos = cliente && concepto && importe && !alcanzoLimite;
   const nextMode = mode === 'system' ? 'light' : mode === 'light' ? 'dark' : 'system';
   const modeIcon = mode === 'system' ? '🔄' : mode === 'light' ? '☀️' : '🌙';
 
