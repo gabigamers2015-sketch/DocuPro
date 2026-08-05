@@ -22,6 +22,12 @@ workflows:
           echo "MYAPP_UPLOAD_KEY_PASSWORD=$CM_KEY_ALIAS_PASSWORD" >> android/gradle.properties
       - name: Configure signing in build.gradle
         script: python3 scripts/patch_gradle.py
+      - name: Debug signing config
+        script: |
+          echo "--- gradle.properties (tail) ---"
+          tail -10 android/gradle.properties
+          echo "--- build.gradle signingConfigs block ---"
+          grep -n -A 8 "signingConfigs {" android/app/build.gradle
       - name: Build Android AAB
         script: |
           cd android
