@@ -35,11 +35,11 @@ workflows:
           grep -n -A 8 "signingConfigs {" android/app/build.gradle
           echo "--- Verificando keystore con la contraseña ---"
           keytool -list -v -keystore android/app/keystore.jks -storepass "$CM_KEYSTORE_PASSWORD" -alias "$CM_KEY_ALIAS" || echo "FALLO LA VERIFICACION DEL KEYSTORE"
-      - name: Build Android AAB
+      - name: Build Android AAB and APK
         script: |
           cd android
           chmod +x gradlew
-          ./gradlew bundleRelease
+          ./gradlew bundleRelease assembleRelease
     artifacts:
       - android/app/build/outputs/**/*.aab
       - android/app/build/outputs/**/*.apk
