@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
+import { getAuth, signOut } from '@react-native-firebase/auth';
 import {
   View,
   Text,
@@ -595,6 +596,25 @@ export default function DocumentosScreen() {
               value={perfil.direccion}
               onChangeText={(v) => setPerfil({ ...perfil, direccion: v })}
             />
+
+            <Pressable
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, marginBottom: Spacing.sm }}
+              onPress={() => {
+                Alert.alert('Cerrar sesión', '¿Seguro que querés salir?', [
+                  { text: 'Cancelar', style: 'cancel' },
+                  {
+                    text: 'Cerrar sesión',
+                    style: 'destructive',
+                    onPress: () => {
+                      setModalPerfil(false);
+                      signOut(getAuth());
+                    },
+                  },
+                ]);
+              }}>
+              <Ionicons name="log-out-outline" size={16} color={colors.danger} />
+              <Text style={{ color: colors.danger, fontWeight: '600', fontSize: 13 }}>Cerrar sesión</Text>
+            </Pressable>
 
             <View style={styles.modalActions}>
               <Pressable style={styles.modalBtnSecondary} onPress={() => setModalPerfil(false)}>

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet, SafeAreaView, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword } from '@react-native-firebase/auth';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from '@react-native-firebase/auth';
 import { Spacing, Radius } from '@/constants/colors';
 import { useTheme } from '@/hooks/useTheme';
 
@@ -33,6 +33,25 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
+  const [mensaje, setMensaje] = useState('');
+
+  const recuperarPassword = async () => {
+    if (!email.trim()) {
+      setError('Escribí tu correo arriba para poder enviarte el link.');
+      return;
+    }
+    setError('');
+    setMensaje('');
+    setCargando(true);
+    try {
+      await sendPasswordResetEmail(getAuth(), email.trim());
+      setMensaje('Te enviamos un correo con el link para restablecer tu contraseña.');
+    } catch (e: any) {
+      setError(traducirError(e?.code || ''));
+    } finally {
+      setCargando(false);
+    }
+  };
 
   const enviar = async () => {
     if (!email.trim() || !password) {
@@ -40,6 +59,7 @@ export default function LoginScreen() {
       return;
     }
     setError('');
+    setMensaje('');
     setCargando(true);
     try {
       const authInstance = getAuth();
@@ -89,6 +109,19 @@ export default function LoginScreen() {
               secureTextEntry
             />
           </View>
+
+          {modo === 'login' && (
+            <Pressable onPress={recuperarPassword} style={{ alignSelf: 'flex-end' }} disabled={cargando}>
+              <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>¿Olvidaste tu contraseña?</Text>
+            </Pressable>
+          )}
+
+          {mensaje ? (
+            <View style={styles.successBox}>
+              <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+              <Text style={styles.successText}>{mensaje}</Text>
+            </View>
+          ) : null}
 
           {error ? (
             <View style={styles.errorBox}>
@@ -146,6 +179,8 @@ function getStyles(colors: any) {
     },
     errorBox: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.danger + '15', padding: 10, borderRadius: Radius.md },
     errorText: { color: colors.danger, fontSize: 13, flex: 1 },
+    successBox: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.success + '15', padding: 10, borderRadius: Radius.md },
+    successText: { color: colors.success, fontSize: 13, flex: 1 },
     btnPrimary: {
       backgroundColor: colors.primary,
       paddingVertical: 14,
