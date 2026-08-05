@@ -54,6 +54,13 @@ export default function ConversorScreen() {
   const [rotarMarca, setRotarMarca] = useState(true);
   const [dimsPaginaMarca, setDimsPaginaMarca] = useState({ width: 595, height: 842 });
   const [modalFirma, setModalFirma] = useState(false);
+  const [pasoFirma, setPasoFirma] = useState<'dibujar' | 'posicionar'>('dibujar');
+  const [firmaCapturada, setFirmaCapturada] = useState<string | null>(null);
+  const [paginasFirma, setPaginasFirma] = useState<{ width: number; height: number }[]>([]);
+  const [paginaActivaFirma, setPaginaActivaFirma] = useState(0);
+  const [posFirma, setPosFirma] = useState({ x: 0.7, y: 0.85 });
+  const [tamanioFirma, setTamanioFirma] = useState<'chico' | 'medio' | 'grande'>('medio');
+  const [medidasPreview, setMedidasPreview] = useState({ width: 0, height: 0 });
   const [modalImagenPdf, setModalImagenPdf] = useState(false);
   const [imagenesPdf, setImagenesPdf] = useState<{ uri: string }[]>([]);
   const [tamanoPagina, setTamanoPagina] = useState<'A4' | 'Carta'>('A4');
@@ -326,12 +333,28 @@ export default function ConversorScreen() {
     const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf' });
     if (result.canceled) return;
     setPdfParaFirma(result.assets[0]);
+    try {
+      const { PDFDocument } = await import('pdf-lib');
+      const { Buffer } = await import('buffer');
+      const base64 = await uriToBase64(result.assets[0].uri);
+      const bytes = Uint8Array.from(Buffer.from(base64, 'base64'));
+      const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true });
+      const dims = pdf.getPages().map((p) => p.getSize());
+      setPaginasFirma(dims);
+      setPaginaActivaFirma(dims.length - 1);
+    } catch {
+      setPaginasFirma([]);
+    }
+    setPasoFirma('dibujar');
+    setFirmaCapturada(null);
+    setPosFirma({ x: 0.7, y: 0.85 });
+    setTamanioFirma('medio');
     setModalFirma(true);
   };
 
-  const aplicarFirma = async (firmaBase64: string) => {
+  const aplicarFirma = async () => {
+    if (!pdfParaFirma || !firmaCapturada) return;
     setModalFirma(false);
-    if (!pdfParaFirma) return;
     setCargando('firma');
     try {
       const { PDFDocument } = await import('pdf-lib');
@@ -340,19 +363,19 @@ export default function ConversorScreen() {
       const bytes = Uint8Array.from(Buffer.from(base64, 'base64'));
       const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true });
 
-      const firmaData = firmaBase64.replace('data:image/png;base64,', '');
+      const firmaData = firmaCapturada.replace('data:image/png;base64,', '');
       const firmaBytes = Uint8Array.from(Buffer.from(firmaData, 'base64'));
       const firmaImage = await pdf.embedPng(firmaBytes);
 
       const paginas = pdf.getPages();
-      const ultimaPagina = paginas[paginas.length - 1];
-      const { width } = ultimaPagina.getSize();
-      const firmaAncho = 150;
+      const paginaElegida = paginas[paginaActivaFirma] || paginas[paginas.length - 1];
+      const { width, height } = paginaElegida.getSize();
+      const firmaAncho = { chico: 110, medio: 150, grande: 200 }[tamanioFirma];
       const firmaAlto = (firmaImage.height / firmaImage.width) * firmaAncho;
 
-      ultimaPagina.drawImage(firmaImage, {
-        x: width - firmaAncho - 40,
-        y: 40,
+      paginaElegida.drawImage(firmaImage, {
+        x: posFirma.x * width - firmaAncho / 2,
+        y: (1 - posFirma.y) * height - firmaAlto / 2,
         width: firmaAncho,
         height: firmaAlto,
       });
@@ -690,16 +713,95 @@ export default function ConversorScreen() {
 
       <Modal visible={modalFirma} animationType="slide">
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-          <Text style={[styles.modalTitle, { padding: Spacing.lg }]}>Dibuja tu firma</Text>
-          <SignatureScreen
-            onOK={aplicarFirma}
-            onEmpty={() => mostrarToast('error', 'Dibuja una firma antes de continuar')}
-            descriptionText=""
-            webStyle={`.m-signature-pad--footer {display: flex; justify-content: center; gap: 16px; padding: 20px;} .button {background-color: ${colors.primary}; color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold;}`}
-          />
-          <Pressable style={styles.modalBtnSecondary} onPress={() => setModalFirma(false)}>
-            <Text style={styles.modalBtnSecondaryText}>Cancelar</Text>
-          </Pressable>
+          {pasoFirma === 'dibujar' ? (
+            <>
+              <Text style={[styles.modalTitle, { padding: Spacing.lg }]}>Dibuja tu firma</Text>
+              <SignatureScreen
+                onOK={(firma: string) => { setFirmaCapturada(firma); setPasoFirma('posicionar'); }}
+                onEmpty={() => mostrarToast('error', 'Dibuja una firma antes de continuar')}
+                descriptionText=""
+                webStyle={`.m-signature-pad--footer {display: flex; justify-content: center; gap: 16px; padding: 20px;} .button {background-color: ${colors.primary}; color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold;}`}
+              />
+              <Pressable style={styles.modalBtnSecondary} onPress={() => setModalFirma(false)}>
+                <Text style={styles.modalBtnSecondaryText}>Cancelar</Text>
+              </Pressable>
+            </>
+          ) : (
+            <ScrollView contentContainerStyle={{ padding: Spacing.lg, alignItems: 'center' }}>
+              <Text style={styles.modalTitle}>Ubicá tu firma</Text>
+
+              {paginasFirma.length > 1 && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginVertical: 12 }}>
+                  <Pressable onPress={() => setPaginaActivaFirma((p) => Math.max(0, p - 1))} disabled={paginaActivaFirma === 0}>
+                    <Ionicons name="chevron-back" size={24} color={paginaActivaFirma === 0 ? colors.textSecondary : colors.primary} />
+                  </Pressable>
+                  <Text style={{ color: colors.text }}>Página {paginaActivaFirma + 1} de {paginasFirma.length}</Text>
+                  <Pressable onPress={() => setPaginaActivaFirma((p) => Math.min(paginasFirma.length - 1, p + 1))} disabled={paginaActivaFirma === paginasFirma.length - 1}>
+                    <Ionicons name="chevron-forward" size={24} color={paginaActivaFirma === paginasFirma.length - 1 ? colors.textSecondary : colors.primary} />
+                  </Pressable>
+                </View>
+              )}
+
+              <Pressable
+                onLayout={(e) => setMedidasPreview({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}
+                onPress={(e) => {
+                  if (!medidasPreview.width || !medidasPreview.height) return;
+                  const x = e.nativeEvent.locationX / medidasPreview.width;
+                  const y = 1 - e.nativeEvent.locationY / medidasPreview.height;
+                  setPosFirma({ x: Math.min(0.95, Math.max(0.05, x)), y: Math.min(0.95, Math.max(0.05, y)) });
+                }}
+                style={{
+                  width: '100%',
+                  aspectRatio: paginasFirma[paginaActivaFirma] ? paginasFirma[paginaActivaFirma].width / paginasFirma[paginaActivaFirma].height : 0.77,
+                  backgroundColor: '#fff',
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  overflow: 'hidden',
+                }}>
+                {firmaCapturada && (
+                  <Image
+                    source={{ uri: firmaCapturada }}
+                    style={{
+                      position: 'absolute',
+                      left: `${posFirma.x * 100}%`,
+                      top: `${(1 - posFirma.y) * 100}%`,
+                      width: { chico: 60, medio: 90, grande: 130 }[tamanioFirma],
+                      height: { chico: 30, medio: 45, grande: 65 }[tamanioFirma],
+                      transform: [{ translateX: -({ chico: 30, medio: 45, grande: 65 }[tamanioFirma]) }, { translateY: -({ chico: 15, medio: 22, grande: 32 }[tamanioFirma]) }],
+                    }}
+                    resizeMode="contain"
+                  />
+                )}
+              </Pressable>
+              <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 8 }}>Tocá el documento para mover la firma</Text>
+
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 16 }}>
+                {(['chico', 'medio', 'grande'] as const).map((t) => (
+                  <Pressable
+                    key={t}
+                    onPress={() => setTamanioFirma(t)}
+                    style={{
+                      paddingVertical: 8,
+                      paddingHorizontal: 16,
+                      borderRadius: 20,
+                      backgroundColor: tamanioFirma === t ? colors.primary : colors.surface,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                    }}>
+                    <Text style={{ color: tamanioFirma === t ? '#fff' : colors.text, textTransform: 'capitalize' }}>{t}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <Pressable style={[styles.modalBtnPrimary, { marginTop: 24, width: '100%' }]} onPress={aplicarFirma}>
+                <Text style={styles.modalBtnPrimaryText}>Firmar documento</Text>
+              </Pressable>
+              <Pressable style={styles.modalBtnSecondary} onPress={() => setPasoFirma('dibujar')}>
+                <Text style={styles.modalBtnSecondaryText}>Volver a dibujar</Text>
+              </Pressable>
+            </ScrollView>
+          )}
         </SafeAreaView>
       </Modal>
 
