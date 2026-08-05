@@ -15,11 +15,11 @@ workflows:
         script: npx expo prebuild --platform android
       - name: Set up signing
         script: |
-          echo "$CM_KEYSTORE" | base64 -d > android/app/keystore.jks
+          echo "${CM_KEYSTORE_PART1}${CM_KEYSTORE_PART2}${CM_KEYSTORE_PART3}" | tr -d '\n' | base64 -d > android/app/keystore.jks
           echo "Tamaño del keystore decodificado:"
           ls -la android/app/keystore.jks
           echo "Largo de la variable CM_KEYSTORE:"
-          echo -n "$CM_KEYSTORE" | wc -c
+          echo -n "${CM_KEYSTORE_PART1}${CM_KEYSTORE_PART2}${CM_KEYSTORE_PART3}" | tr -d '\n' | wc -c
           printf "\n" >> android/gradle.properties
           echo "MYAPP_UPLOAD_STORE_FILE=keystore.jks" >> android/gradle.properties
           echo "MYAPP_UPLOAD_KEY_ALIAS=$CM_KEY_ALIAS" >> android/gradle.properties
