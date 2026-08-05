@@ -54,6 +54,8 @@ export default function ConversorScreen() {
   const [imagenesPdf, setImagenesPdf] = useState<{ uri: string }[]>([]);
   const [tamanoPagina, setTamanoPagina] = useState<'A4' | 'Carta'>('A4');
   const [orientacionPdf, setOrientacionPdf] = useState<'vertical' | 'horizontal'>('vertical');
+  const [modalUnirPdfs, setModalUnirPdfs] = useState(false);
+  const [pdfsAUnir, setPdfsAUnir] = useState<{ uri: string; name: string; size?: number }[]>([]);
   const [toast, setToast] = useState<{ tipo: ToastTipo; mensaje: string } | null>(null);
   const anim = useRef(new Animated.Value(0)).current;
   const toastAnim = useRef(new Animated.Value(0)).current;
@@ -136,12 +138,38 @@ export default function ConversorScreen() {
       if (!result.canceled) mostrarToast('error', 'Selecciona al menos 2 PDFs para unir');
       return;
     }
+    setPdfsAUnir(result.assets.map((a) => ({ uri: a.uri, name: a.name, size: a.size })));
+    setModalUnirPdfs(true);
+  };
+
+  const agregarMasPdfs = async () => {
+    const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', multiple: true });
+    if (result.canceled || result.assets.length === 0) return;
+    setPdfsAUnir((prev) => [...prev, ...result.assets.map((a) => ({ uri: a.uri, name: a.name, size: a.size }))]);
+  };
+
+  const quitarPdfAUnir = (idx: number) => {
+    setPdfsAUnir((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const moverPdfAUnir = (idx: number, direccion: -1 | 1) => {
+    setPdfsAUnir((prev) => {
+      const nuevo = [...prev];
+      const destino = idx + direccion;
+      if (destino < 0 || destino >= nuevo.length) return prev;
+      [nuevo[idx], nuevo[destino]] = [nuevo[destino], nuevo[idx]];
+      return nuevo;
+    });
+  };
+
+  const confirmarUnirPdfs = async () => {
+    if (pdfsAUnir.length < 2) return;
     setCargando('unir');
     try {
       const { PDFDocument } = await import('pdf-lib');
       const { Buffer } = await import('buffer');
       const pdfUnido = await PDFDocument.create();
-      for (const archivo of result.assets) {
+      for (const archivo of pdfsAUnir) {
         const base64 = await uriToBase64(archivo.uri);
         const bytes = Uint8Array.from(Buffer.from(base64, 'base64'));
         const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true });
@@ -150,7 +178,9 @@ export default function ConversorScreen() {
       }
       const pdfBytes = await pdfUnido.save();
       await guardarOCompartir(pdfBytes, 'documento-unido.pdf');
-      mostrarToast('success', `¡${result.assets.length} PDFs unidos!`);
+      mostrarToast('success', `¡${pdfsAUnir.length} PDFs unidos!`);
+      setModalUnirPdfs(false);
+      setPdfsAUnir([]);
     } catch (e) {
       mostrarToast('error', 'No se pudieron unir los PDFs. Verifica que sean archivos válidos.');
     } finally {
@@ -390,6 +420,62 @@ export default function ConversorScreen() {
               disabled={imagenesPdf.length === 0 || cargando === 'imagen'}>
               <Text style={styles.modalBtnPrimaryText}>
                 {cargando === 'imagen' ? 'Generando...' : `Crear PDF (${imagenesPdf.length} página${imagenesPdf.length === 1 ? '' : 's'})`}
+              </Text>
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      <Modal visible={modalUnirPdfs} animationType="slide">
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg }}>
+            <Text style={styles.modalTitle}>Unir PDFs</Text>
+            <Pressable onPress={() => { setModalUnirPdfs(false); setPdfsAUnir([]); }}>
+              <Ionicons name="close" size={26} color={colors.textSecondary} />
+            </Pressable>
+          </View>
+
+          <ScrollView style={{ flex: 1, paddingHorizontal: Spacing.lg }}>
+            <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 10 }}>
+              {pdfsAUnir.length} archivo(s) — se unirán en este orden
+            </Text>
+
+            {pdfsAUnir.map((pdf, idx) => (
+              <View key={pdf.uri + idx} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10, backgroundColor: colors.surface, borderRadius: Radius.md, padding: 10, borderWidth: 1, borderColor: colors.border }}>
+                <View style={{ width: 36, height: 36, borderRadius: Radius.sm, backgroundColor: colors.primary + '18', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ color: colors.primary, fontWeight: '800', fontSize: 12 }}>{idx + 1}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: colors.text, fontSize: 13, fontWeight: '600' }} numberOfLines={1}>{pdf.name}</Text>
+                  {pdf.size ? (
+                    <Text style={{ color: colors.textSecondary, fontSize: 11 }}>{(pdf.size / 1024).toFixed(0)} KB</Text>
+                  ) : null}
+                </View>
+                <Pressable onPress={() => moverPdfAUnir(idx, -1)} disabled={idx === 0} style={{ opacity: idx === 0 ? 0.3 : 1 }}>
+                  <Ionicons name="chevron-up" size={20} color={colors.textSecondary} />
+                </Pressable>
+                <Pressable onPress={() => moverPdfAUnir(idx, 1)} disabled={idx === pdfsAUnir.length - 1} style={{ opacity: idx === pdfsAUnir.length - 1 ? 0.3 : 1 }}>
+                  <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
+                </Pressable>
+                <Pressable onPress={() => quitarPdfAUnir(idx)}>
+                  <Ionicons name="trash-outline" size={20} color={colors.danger} />
+                </Pressable>
+              </View>
+            ))}
+
+            <Pressable onPress={agregarMasPdfs} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, marginBottom: 20, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.primary, borderRadius: Radius.md }}>
+              <Ionicons name="add" size={18} color={colors.primary} />
+              <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 13 }}>Agregar más PDFs</Text>
+            </Pressable>
+          </ScrollView>
+
+          <View style={{ padding: Spacing.lg }}>
+            <Pressable
+              style={[styles.modalBtnPrimary, (pdfsAUnir.length < 2 || cargando === 'unir') && { opacity: 0.6 }]}
+              onPress={confirmarUnirPdfs}
+              disabled={pdfsAUnir.length < 2 || cargando === 'unir'}>
+              <Text style={styles.modalBtnPrimaryText}>
+                {cargando === 'unir' ? 'Uniendo...' : `Unir ${pdfsAUnir.length} PDFs`}
               </Text>
             </Pressable>
           </View>
