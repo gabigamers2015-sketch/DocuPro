@@ -23,6 +23,7 @@ import { Spacing, Radius } from '@/constants/colors';
 import { useTheme } from '@/hooks/useTheme';
 
 const STORAGE_KEY = 'docupro:facturas';
+const CLIENTES_KEY = 'docupro:clientes';
 
 const TEXTOS = {
   es: { factura: 'FACTURA', cliente: 'Cliente', concepto: 'Concepto', total: 'Total' },
@@ -49,6 +50,8 @@ export default function DocumentosScreen() {
   };
   const [generando, setGenerando] = useState(false);
   const [historial, setHistorial] = useState<Factura[]>([]);
+  const [clientes, setClientes] = useState<string[]>([]);
+  const [mostrarListaClientes, setMostrarListaClientes] = useState(false);
   const [mostrarHistorial, setMostrarHistorial] = useState(false);
   const [idioma, setIdioma] = useState<'es' | 'en' | 'ca'>('es');
   const [plantilla, setPlantilla] = useState<'minimalista' | 'corporativo' | 'colorido'>('minimalista');
@@ -64,6 +67,7 @@ export default function DocumentosScreen() {
       Animated.timing(cardAnim, { toValue: 1, duration: 450, useNativeDriver: true }).start();
       cargarHistorial();
       cargarPerfil();
+      cargarClientes();
     }, [])
   );
 
@@ -103,6 +107,28 @@ export default function DocumentosScreen() {
     } catch {
       setHistorial([]);
     }
+  };
+
+  const cargarClientes = async () => {
+    try {
+      const raw = await AsyncStorage.getItem(CLIENTES_KEY);
+      setClientes(raw ? JSON.parse(raw) : []);
+    } catch {
+      setClientes([]);
+    }
+  };
+
+  const guardarCliente = async (nombre: string) => {
+    if (!nombre.trim()) return;
+    try {
+      const raw = await AsyncStorage.getItem(CLIENTES_KEY);
+      const lista: string[] = raw ? JSON.parse(raw) : [];
+      if (!lista.includes(nombre.trim())) {
+        lista.unshift(nombre.trim());
+        await AsyncStorage.setItem(CLIENTES_KEY, JSON.stringify(lista));
+        setClientes(lista);
+      }
+    } catch {}
   };
 
   const guardarEnHistorial = async (factura: Factura) => {
@@ -198,6 +224,7 @@ export default function DocumentosScreen() {
       }
 
       await guardarEnHistorial({ id: Date.now().toString(), cliente, items, importe: totalConIva.toFixed(2), fecha, pagada: false, numero: numeroFactura });
+      await guardarCliente(cliente);
       setCliente('');
       setItems([{ descripcion: '', cantidad: '1', precio: '' }]);
     } finally {
@@ -362,6 +389,27 @@ export default function DocumentosScreen() {
             }}>
             <View style={styles.card}>
               <Field colors={colors} label="Cliente" value={cliente} onChangeText={setCliente} placeholder="Nombre del cliente" />
+              {clientes.length > 0 && (
+                <View style={{ marginTop: -8, marginBottom: 12 }}>
+                  <Pressable onPress={() => setMostrarListaClientes(!mostrarListaClientes)}>
+                    <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>
+                      {mostrarListaClientes ? '▲ Ocultar clientes guardados' : `▼ Elegir de ${clientes.length} cliente(s) guardado(s)`}
+                    </Text>
+                  </Pressable>
+                  {mostrarListaClientes && (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                      {clientes.map((nombre) => (
+                        <Pressable
+                          key={nombre}
+                          onPress={() => { setCliente(nombre); setMostrarListaClientes(false); }}
+                          style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999, backgroundColor: colors.primary + '18', borderWidth: 1, borderColor: colors.primary + '40' }}>
+                          <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>{nombre}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )}
 
               <Text style={styles.label}>Conceptos</Text>
               {items.map((it, idx) => (
