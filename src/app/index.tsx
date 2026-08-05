@@ -221,6 +221,51 @@ export default function DocumentosScreen() {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(lista));
   };
 
+  const compartirFactura = async (factura: Factura) => {
+    const subtotalF = factura.items.reduce((acc, it) => acc + (parseFloat(it.cantidad) || 0) * (parseFloat(it.precio) || 0), 0);
+    const ivaF = subtotalF * 0.21;
+    const totalF = subtotalF + ivaF;
+    const t = TEXTOS[idioma];
+    const colorPlantilla = plantilla === 'corporativo' ? '#0F172A' : plantilla === 'colorido' ? '#EC4899' : '#4F46E5';
+    const logoHtml = perfil.logo ? `<img src="${perfil.logo}" style="height:56px;margin-bottom:12px;" />` : '';
+    const empresaHtml = perfil.nombreEmpresa
+      ? `<p style="margin:0;font-weight:700;color:#0F172A;">${perfil.nombreEmpresa}</p>
+         ${perfil.nif ? `<p style="margin:2px 0;color:#64748B;font-size:13px;">${perfil.nif}</p>` : ''}
+         ${perfil.direccion ? `<p style="margin:0;color:#64748B;font-size:13px;">${perfil.direccion}</p>` : ''}`
+      : '';
+    const itemsHtml = factura.items.map((it) => {
+      const cant = parseFloat(it.cantidad) || 0;
+      const precio = parseFloat(it.precio) || 0;
+      const lineaTotal = (cant * precio).toFixed(2);
+      return `<tr style="border-top:1px solid #E2E8F0;"><td style="padding:10px 0;">${it.descripcion || '—'}</td><td style="padding:10px 0;text-align:center;color:#64748B;">${cant}</td><td style="padding:10px 0;text-align:right;color:#64748B;">${precio.toFixed(2)} €</td><td style="padding:10px 0;text-align:right;font-weight:600;">${lineaTotal} €</td></tr>`;
+    }).join('');
+    const html = `
+      <html>
+        <body style="font-family: -apple-system, Helvetica, sans-serif; padding: 48px; color: #0F172A;">
+          ${logoHtml}
+          ${empresaHtml}
+          <div style="border-bottom: 3px solid ${colorPlantilla}; padding-bottom: 16px; margin: 24px 0 32px;">
+            <h1 style="margin: 0; color: ${colorPlantilla};">${t.factura}</h1>
+            <p style="color: #64748B; margin: 4px 0 0;">${factura.fecha}</p>
+          </div>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr><td colspan="4" style="padding:12px 0;color:#64748B;">${t.cliente}: <strong>${factura.cliente || '—'}</strong></td></tr>
+            <tr style="border-bottom:2px solid ${colorPlantilla};"><td style="padding:8px 0;color:#64748B;font-size:12px;">${t.concepto}</td><td style="padding:8px 0;text-align:center;color:#64748B;font-size:12px;">CANT.</td><td style="padding:8px 0;text-align:right;color:#64748B;font-size:12px;">PRECIO</td><td style="padding:8px 0;text-align:right;color:#64748B;font-size:12px;">SUBT.</td></tr>
+            ${itemsHtml}
+            <tr><td colspan="4" style="padding-top:16px;text-align:right;color:#64748B;">Subtotal: ${subtotalF.toFixed(2)} € &nbsp;&nbsp; IVA (21%): ${ivaF.toFixed(2)} €</td></tr>
+            <tr style="border-top:2px solid ${colorPlantilla};"><td colspan="3" style="padding:16px 0;font-size:18px;font-weight:700;">${t.total}</td><td style="padding:16px 0;text-align:right;font-size:18px;font-weight:700;color:${colorPlantilla};">${totalF.toFixed(2)} €</td></tr>
+          </table>
+        </body>
+      </html>
+    `;
+    try {
+      const { uri } = await Print.printToFileAsync({ html });
+      await Sharing.shareAsync(uri, { dialogTitle: `Factura ${factura.cliente}` });
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo generar el PDF para compartir.');
+    }
+  };
+
   const generarFactura = async () => {
     setGenerando(true);
     const numeroFactura = `FAC-${new Date().getFullYear()}-${String(historial.length + 1).padStart(3, '0')}`;
@@ -424,6 +469,10 @@ export default function DocumentosScreen() {
                     <Text style={{ fontSize: 11, fontWeight: '700', color: item.pagada ? colors.success : colors.danger }}>
                       {item.pagada ? 'Pagada' : 'Pendiente'}
                     </Text>
+                  </Pressable>
+                  <Pressable onPress={() => compartirFactura(item)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Ionicons name="logo-whatsapp" size={14} color="#25D366" />
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#25D366' }}>Compartir</Text>
                   </Pressable>
                 </View>
               </View>
