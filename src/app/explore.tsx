@@ -56,6 +56,9 @@ export default function ConversorScreen() {
   const [orientacionPdf, setOrientacionPdf] = useState<'vertical' | 'horizontal'>('vertical');
   const [modalUnirPdfs, setModalUnirPdfs] = useState(false);
   const [pdfsAUnir, setPdfsAUnir] = useState<{ uri: string; name: string; size?: number }[]>([]);
+  const [modalComprimir, setModalComprimir] = useState(false);
+  const [pdfParaComprimir, setPdfParaComprimir] = useState<{ uri: string; name: string; bytes: Uint8Array; size: number } | null>(null);
+  const [resultadoComprimido, setResultadoComprimido] = useState<{ size: number; bytes: Uint8Array } | null>(null);
   const [toast, setToast] = useState<{ tipo: ToastTipo; mensaje: string } | null>(null);
   const anim = useRef(new Animated.Value(0)).current;
   const toastAnim = useRef(new Animated.Value(0)).current;
@@ -191,21 +194,66 @@ export default function ConversorScreen() {
   const comprimirPdf = async () => {
     const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf' });
     if (result.canceled) return;
-    setCargando('comprimir');
     try {
-      const { PDFDocument } = await import('pdf-lib');
       const { Buffer } = await import('buffer');
       const base64 = await uriToBase64(result.assets[0].uri);
       const bytes = Uint8Array.from(Buffer.from(base64, 'base64'));
-      const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true });
+      setPdfParaComprimir({ uri: result.assets[0].uri, name: result.assets[0].name, bytes, size: bytes.length });
+      setResultadoComprimido(null);
+      setModalComprimir(true);
+    } catch (e) {
+      mostrarToast('error', 'No se pudo leer el PDF.');
+    }
+  };
+
+  const comprimirConCalidad = async (jpegQuality: number) => {
+    if (!pdfParaComprimir) return;
+    setCargando('comprimir');
+    try {
+      const { PDFDocument, PDFName, PDFRawStream, PDFNumber } = await import('pdf-lib');
+      const jpeg = await import('jpeg-js');
+      const pdf = await PDFDocument.load(pdfParaComprimir.bytes, { ignoreEncryption: true });
+      const indirectObjects = pdf.context.enumerateIndirectObjects();
+      for (const [ref, obj] of indirectObjects) {
+        if (obj instanceof PDFRawStream) {
+          const dict = obj.dict;
+          const subtype = dict.get(PDFName.of('Subtype'));
+          const filter = dict.get(PDFName.of('Filter'));
+          const esImagen = subtype && subtype.toString() === '/Image';
+          const esJpeg = filter && filter.toString().includes('DCTDecode');
+          if (esImagen && esJpeg) {
+            try {
+              const rawData = obj.getContents();
+              const decoded = jpeg.decode(rawData, { useTArray: true });
+              const encoded = jpeg.encode(decoded, jpegQuality);
+              const newContents = new Uint8Array(encoded.data);
+              if (newContents.length < rawData.length) {
+                dict.set(PDFName.of('Length'), PDFNumber.of(newContents.length));
+                const newStream = PDFRawStream.of(dict, newContents);
+                pdf.context.assign(ref, newStream);
+              }
+            } catch (imgErr) {
+              // imagen no soportada (ej. JPEG progresivo), la dejamos como está
+            }
+          }
+        }
+      }
       const pdfBytes = await pdf.save({ useObjectStreams: true });
-      await guardarOCompartir(pdfBytes, 'documento-comprimido.pdf');
-      mostrarToast('success', '¡PDF comprimido!');
+      setResultadoComprimido({ size: pdfBytes.length, bytes: pdfBytes });
     } catch (e) {
       mostrarToast('error', 'No se pudo comprimir el PDF.');
     } finally {
       setCargando(null);
     }
+  };
+
+  const compartirComprimido = async () => {
+    if (!resultadoComprimido) return;
+    await guardarOCompartir(resultadoComprimido.bytes, 'documento-comprimido.pdf');
+    mostrarToast('success', '¡PDF comprimido compartido!');
+    setModalComprimir(false);
+    setPdfParaComprimir(null);
+    setResultadoComprimido(null);
   };
 
   const [pdfParaMarca, setPdfParaMarca] = useState<any>(null);
@@ -479,6 +527,75 @@ export default function ConversorScreen() {
               </Text>
             </Pressable>
           </View>
+        </SafeAreaView>
+      </Modal>
+
+      <Modal visible={modalComprimir} animationType="slide">
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg }}>
+            <Text style={styles.modalTitle}>Comprimir PDF</Text>
+            <Pressable onPress={() => { setModalComprimir(false); setPdfParaComprimir(null); setResultadoComprimido(null); }}>
+              <Ionicons name="close" size={26} color={colors.textSecondary} />
+            </Pressable>
+          </View>
+
+          <ScrollView style={{ flex: 1, paddingHorizontal: Spacing.lg }}>
+            {pdfParaComprimir && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20, backgroundColor: colors.surface, borderRadius: Radius.md, padding: 12, borderWidth: 1, borderColor: colors.border }}>
+                <Ionicons name="document-text-outline" size={28} color={colors.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: colors.text, fontSize: 13, fontWeight: '600' }} numberOfLines={1}>{pdfParaComprimir.name}</Text>
+                  <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Original: {(pdfParaComprimir.size / 1024).toFixed(0)} KB</Text>
+                </View>
+              </View>
+            )}
+
+            <Text style={{ color: colors.text, fontWeight: '700', fontSize: 13, marginBottom: 10 }}>Nivel de compresión</Text>
+
+            {[
+              { label: 'Baja compresión', desc: 'Mejor calidad de imagen', quality: 75 },
+              { label: 'Compresión media', desc: 'Buen balance calidad/tamaño', quality: 50 },
+              { label: 'Compresión alta', desc: 'Menor tamaño, menor calidad', quality: 25 },
+            ].map((nivel) => (
+              <Pressable
+                key={nivel.label}
+                onPress={() => comprimirConCalidad(nivel.quality)}
+                disabled={cargando === 'comprimir'}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, marginBottom: 10, borderRadius: Radius.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, opacity: cargando === 'comprimir' ? 0.6 : 1 }}>
+                <View>
+                  <Text style={{ color: colors.text, fontWeight: '600', fontSize: 14 }}>{nivel.label}</Text>
+                  <Text style={{ color: colors.textSecondary, fontSize: 12 }}>{nivel.desc}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+              </Pressable>
+            ))}
+
+            {cargando === 'comprimir' && (
+              <Text style={{ color: colors.textSecondary, fontSize: 13, textAlign: 'center', marginTop: 8 }}>Comprimiendo...</Text>
+            )}
+
+            {resultadoComprimido && pdfParaComprimir && (
+              <View style={{ marginTop: 20, backgroundColor: colors.success + '15', borderRadius: Radius.md, padding: 16, alignItems: 'center' }}>
+                <Ionicons name="checkmark-circle" size={28} color={colors.success} />
+                <Text style={{ color: colors.text, fontWeight: '700', fontSize: 16, marginTop: 6 }}>
+                  {(resultadoComprimido.size / 1024).toFixed(0)} KB
+                </Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>
+                  {resultadoComprimido.size < pdfParaComprimir.size
+                    ? `${Math.round((1 - resultadoComprimido.size / pdfParaComprimir.size) * 100)}% más liviano`
+                    : 'Este PDF ya estaba optimizado, no bajó de tamaño'}
+                </Text>
+              </View>
+            )}
+          </ScrollView>
+
+          {resultadoComprimido && (
+            <View style={{ padding: Spacing.lg }}>
+              <Pressable style={styles.modalBtnPrimary} onPress={compartirComprimido}>
+                <Text style={styles.modalBtnPrimaryText}>Compartir PDF comprimido</Text>
+              </Pressable>
+            </View>
+          )}
         </SafeAreaView>
       </Modal>
 
