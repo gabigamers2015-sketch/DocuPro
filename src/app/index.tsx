@@ -17,10 +17,21 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
 import * as ImagePicker from 'expo-image-picker';
 import { Modal, Image } from 'react-native';
 import { Spacing, Radius } from '@/constants/colors';
 import { useTheme } from '@/hooks/useTheme';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 const STORAGE_KEY = 'docupro:facturas';
 const CLIENTES_KEY = 'docupro:clientes';
@@ -32,7 +43,7 @@ const TEXTOS = {
 };
 
 type ItemFactura = { descripcion: string; cantidad: string; precio: string };
-type Factura = { id: string; cliente: string; items: ItemFactura[]; importe: string; fecha: string; pagada?: boolean; numero?: string };
+type Factura = { id: string; cliente: string; items: ItemFactura[]; importe: string; fecha: string; pagada?: boolean; numero?: string; notificationId?: string };
 
 export default function DocumentosScreen() {
   const { colors, gradients, isDark, mode, setMode } = useTheme();
@@ -68,6 +79,7 @@ export default function DocumentosScreen() {
       cargarHistorial();
       cargarPerfil();
       cargarClientes();
+      configurarNotificaciones();
     }, [])
   );
 
@@ -106,6 +118,37 @@ export default function DocumentosScreen() {
       setHistorial(raw ? JSON.parse(raw) : []);
     } catch {
       setHistorial([]);
+    }
+  };
+
+  const configurarNotificaciones = async () => {
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('facturas-pendientes', {
+        name: 'Facturas pendientes',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 150, 250],
+        lightColor: '#4F46E5',
+        sound: 'default',
+      });
+    }
+    await Notifications.requestPermissionsAsync();
+  };
+
+  const programarRecordatorio = async (factura: Factura): Promise<string | undefined> => {
+    try {
+      const id = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '💸 ¡Factura pendiente de cobro!',
+          body: `${factura.numero || ''} · ${factura.cliente} te debe ${factura.importe} € — no te olvides de cobrar`,
+          data: { facturaId: factura.id },
+          sound: 'default',
+          ...(Platform.OS === 'android' ? { channelId: 'facturas-pendientes' } : {}),
+        },
+        trigger: { seconds: 60 * 60 * 24 * 3, channelId: 'facturas-pendientes' } as any,
+      });
+      return id;
+    } catch {
+      return undefined;
     }
   };
 
@@ -167,6 +210,10 @@ export default function DocumentosScreen() {
   };
 
   const togglePagada = async (id: string) => {
+    const factura = historial.find((f) => f.id === id);
+    if (factura && !factura.pagada && factura.notificationId) {
+      await Notifications.cancelScheduledNotificationAsync(factura.notificationId).catch(() => {});
+    }
     const lista = historial.map((f) => (f.id === id ? { ...f, pagada: !f.pagada } : f));
     setHistorial(lista);
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(lista));
@@ -223,7 +270,9 @@ export default function DocumentosScreen() {
         await Sharing.shareAsync(uri);
       }
 
-      await guardarEnHistorial({ id: Date.now().toString(), cliente, items, importe: totalConIva.toFixed(2), fecha, pagada: false, numero: numeroFactura });
+      const nuevaFactura: Factura = { id: Date.now().toString(), cliente, items, importe: totalConIva.toFixed(2), fecha, pagada: false, numero: numeroFactura };
+      const notifId = await programarRecordatorio(nuevaFactura);
+      await guardarEnHistorial({ ...nuevaFactura, notificationId: notifId });
       await guardarCliente(cliente);
       setCliente('');
       setItems([{ descripcion: '', cantidad: '1', precio: '' }]);

@@ -23,6 +23,7 @@
     "expo-linear-gradient": "~57.0.1",
     "expo-linking": "~57.0.5",
     "expo-media-library": "~57.0.3",
+    "expo-notifications": "~57.0.8",
     "expo-print": "~57.0.1",
     "expo-quick-actions": "^6.0.2",
     "expo-router": "~57.0.10",

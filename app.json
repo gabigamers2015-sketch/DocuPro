@@ -36,7 +36,15 @@
       ],
       "expo-sharing",
       "expo-image",
-      "expo-quick-actions"
+      "expo-quick-actions",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/android-icon-foreground.png",
+          "color": "#4F46E5",
+          "sounds": []
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
