@@ -49,6 +49,10 @@ export default function ConversorScreen() {
   const [cargando, setCargando] = useState<string | null>(null);
   const [modalMarca, setModalMarca] = useState(false);
   const [textoMarca, setTextoMarca] = useState('');
+  const [tamanoMarca, setTamanoMarca] = useState(40);
+  const [opacidadMarca, setOpacidadMarca] = useState(0.3);
+  const [rotarMarca, setRotarMarca] = useState(true);
+  const [dimsPaginaMarca, setDimsPaginaMarca] = useState({ width: 595, height: 842 });
   const [modalFirma, setModalFirma] = useState(false);
   const [modalImagenPdf, setModalImagenPdf] = useState(false);
   const [imagenesPdf, setImagenesPdf] = useState<{ uri: string }[]>([]);
@@ -263,6 +267,21 @@ export default function ConversorScreen() {
     if (result.canceled) return;
     setPdfParaMarca(result.assets[0]);
     setTextoMarca('');
+    setTamanoMarca(40);
+    setOpacidadMarca(0.3);
+    setRotarMarca(true);
+    try {
+      const { PDFDocument } = await import('pdf-lib');
+      const { Buffer } = await import('buffer');
+      const base64 = await uriToBase64(result.assets[0].uri);
+      const bytes = Uint8Array.from(Buffer.from(base64, 'base64'));
+      const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true });
+      const primera = pdf.getPages()[0];
+      const { width, height } = primera.getSize();
+      setDimsPaginaMarca({ width, height });
+    } catch (e) {
+      setDimsPaginaMarca({ width: 595, height: 842 });
+    }
     setModalMarca(true);
   };
 
@@ -281,12 +300,12 @@ export default function ConversorScreen() {
       paginas.forEach((pagina) => {
         const { width, height } = pagina.getSize();
         pagina.drawText(textoMarca, {
-          x: width / 2 - (textoMarca.length * 6),
+          x: width / 2 - (textoMarca.length * tamanoMarca * 0.28),
           y: height / 2,
-          size: 40,
+          size: tamanoMarca,
           color: rgb(0.6, 0.6, 0.6),
-          opacity: 0.3,
-          rotate: degrees(-45),
+          opacity: opacidadMarca,
+          rotate: degrees(rotarMarca ? -45 : 0),
         });
       });
 
@@ -376,28 +395,98 @@ export default function ConversorScreen() {
         </View>
       </Animated.View>
 
-      <Modal visible={modalMarca} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Texto de la marca de agua</Text>
+      <Modal visible={modalMarca} animationType="slide">
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg }}>
+            <Text style={styles.modalTitle}>Marca de agua</Text>
+            <Pressable onPress={() => { setModalMarca(false); setPdfParaMarca(null); }}>
+              <Ionicons name="close" size={26} color={colors.textSecondary} />
+            </Pressable>
+          </View>
+
+          <ScrollView style={{ flex: 1, paddingHorizontal: Spacing.lg }}>
+            <View
+              style={{
+                width: '100%',
+                aspectRatio: dimsPaginaMarca.width / dimsPaginaMarca.height,
+                backgroundColor: '#fff',
+                borderRadius: Radius.sm,
+                borderWidth: 1,
+                borderColor: colors.border,
+                overflow: 'hidden',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 20,
+              }}>
+              <Text
+                numberOfLines={1}
+                style={{
+                  fontSize: tamanoMarca * 0.8,
+                  fontWeight: '700',
+                  color: `rgba(100,100,100,${opacidadMarca})`,
+                  transform: [{ rotate: rotarMarca ? '-45deg' : '0deg' }],
+                }}>
+                {textoMarca || 'CONFIDENCIAL'}
+              </Text>
+            </View>
+
+            <Text style={{ color: colors.text, fontWeight: '700', fontSize: 13, marginBottom: 8 }}>Texto</Text>
             <TextInput
               style={styles.modalInput}
               placeholder="Ej: CONFIDENCIAL"
               placeholderTextColor={colors.textSecondary}
               value={textoMarca}
               onChangeText={setTextoMarca}
-              autoFocus
             />
-            <View style={styles.modalActions}>
-              <Pressable style={styles.modalBtnSecondary} onPress={() => setModalMarca(false)}>
-                <Text style={styles.modalBtnSecondaryText}>Cancelar</Text>
-              </Pressable>
-              <Pressable style={styles.modalBtnPrimary} onPress={aplicarMarcaAgua}>
-                <Text style={styles.modalBtnPrimaryText}>Aplicar</Text>
-              </Pressable>
+
+            <Text style={{ color: colors.text, fontWeight: '700', fontSize: 13, marginTop: 16, marginBottom: 8 }}>Tamaño</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+              {[{ label: 'Chico', v: 24 }, { label: 'Mediano', v: 40 }, { label: 'Grande', v: 60 }].map((op) => (
+                <Pressable
+                  key={op.label}
+                  onPress={() => setTamanoMarca(op.v)}
+                  style={{ flex: 1, paddingVertical: 10, borderRadius: Radius.md, alignItems: 'center', backgroundColor: tamanoMarca === op.v ? colors.primary : colors.surface, borderWidth: 1, borderColor: tamanoMarca === op.v ? colors.primary : colors.border }}>
+                  <Text style={{ color: tamanoMarca === op.v ? '#fff' : colors.text, fontWeight: '600', fontSize: 13 }}>{op.label}</Text>
+                </Pressable>
+              ))}
             </View>
+
+            <Text style={{ color: colors.text, fontWeight: '700', fontSize: 13, marginBottom: 8 }}>Opacidad</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+              {[{ label: 'Sutil', v: 0.15 }, { label: 'Media', v: 0.3 }, { label: 'Marcada', v: 0.5 }].map((op) => (
+                <Pressable
+                  key={op.label}
+                  onPress={() => setOpacidadMarca(op.v)}
+                  style={{ flex: 1, paddingVertical: 10, borderRadius: Radius.md, alignItems: 'center', backgroundColor: opacidadMarca === op.v ? colors.primary : colors.surface, borderWidth: 1, borderColor: opacidadMarca === op.v ? colors.primary : colors.border }}>
+                  <Text style={{ color: opacidadMarca === op.v ? '#fff' : colors.text, fontWeight: '600', fontSize: 13 }}>{op.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={{ color: colors.text, fontWeight: '700', fontSize: 13, marginBottom: 8 }}>Orientación</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 24 }}>
+              {[{ label: 'Diagonal', v: true }, { label: 'Horizontal', v: false }].map((op) => (
+                <Pressable
+                  key={op.label}
+                  onPress={() => setRotarMarca(op.v)}
+                  style={{ flex: 1, paddingVertical: 10, borderRadius: Radius.md, alignItems: 'center', backgroundColor: rotarMarca === op.v ? colors.primary : colors.surface, borderWidth: 1, borderColor: rotarMarca === op.v ? colors.primary : colors.border }}>
+                  <Text style={{ color: rotarMarca === op.v ? '#fff' : colors.text, fontWeight: '600', fontSize: 13 }}>{op.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </ScrollView>
+
+          <View style={{ padding: Spacing.lg }}>
+            <Pressable
+              style={[styles.modalBtnPrimary, !textoMarca.trim() && { opacity: 0.6 }]}
+              onPress={aplicarMarcaAgua}
+              disabled={!textoMarca.trim() || cargando === 'marca'}>
+              <Text style={styles.modalBtnPrimaryText}>
+                {cargando === 'marca' ? 'Aplicando...' : 'Aplicar marca de agua'}
+              </Text>
+            </Pressable>
           </View>
-        </View>
+        </SafeAreaView>
       </Modal>
 
       <Modal visible={modalImagenPdf} animationType="slide">
