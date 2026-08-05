@@ -4,6 +4,8 @@ workflows:
     max_build_duration: 60
     environment:
       node: 20
+      groups:
+        - keystore_creds
       vars:
         PACKAGE_NAME: "com.gabigamers2015sketch.docupro"
     scripts:
@@ -11,10 +13,43 @@ workflows:
         script: npm install
       - name: Prebuild Android project
         script: npx expo prebuild --platform android
-      - name: Build Android APK
+      - name: Set up signing
+        script: |
+          echo $CM_KEYSTORE | base64 -d > $CM_BUILD_DIR/android/app/keystore.jks
+          cat >> "$CM_BUILD_DIR/android/gradle.properties" <<PROPS
+          MYAPP_UPLOAD_STORE_FILE=keystore.jks
+          MYAPP_UPLOAD_KEY_ALIAS=$CM_KEY_ALIAS
+          MYAPP_UPLOAD_STORE_PASSWORD=$CM_KEYSTORE_PASSWORD
+          MYAPP_UPLOAD_KEY_PASSWORD=$CM_KEY_ALIAS_PASSWORD
+          PROPS
+      - name: Configure signing in build.gradle
+        script: |
+          cd android
+          python3 << 'PYEOF'
+          with open('app/build.gradle', 'r') as f:
+              c = f.read()
+
+          signing_config = '''    signingConfigs {
+              release {
+                  storeFile file(MYAPP_UPLOAD_STORE_FILE)
+                  storePassword MYAPP_UPLOAD_STORE_PASSWORD
+                  keyAlias MYAPP_UPLOAD_KEY_ALIAS
+                  keyPassword MYAPP_UPLOAD_KEY_PASSWORD
+              }
+          }
+      buildTypes {'''
+          c = c.replace('    buildTypes {', signing_config, 1)
+          c = c.replace('signingConfig signingConfigs.debug', 'signingConfig signingConfigs.release')
+
+          with open('app/build.gradle', 'w') as f:
+              f.write(c)
+          print("signing configurado")
+          PYEOF
+      - name: Build Android AAB
         script: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew bundleRelease
     artifacts:
+      - android/app/build/outputs/**/*.aab
       - android/app/build/outputs/**/*.apk
