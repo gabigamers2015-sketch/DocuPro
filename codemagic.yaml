@@ -15,36 +15,13 @@ workflows:
         script: npx expo prebuild --platform android
       - name: Set up signing
         script: |
-          echo $CM_KEYSTORE | base64 -d > $CM_BUILD_DIR/android/app/keystore.jks
-          cat >> "$CM_BUILD_DIR/android/gradle.properties" <<PROPS
-          MYAPP_UPLOAD_STORE_FILE=keystore.jks
-          MYAPP_UPLOAD_KEY_ALIAS=$CM_KEY_ALIAS
-          MYAPP_UPLOAD_STORE_PASSWORD=$CM_KEYSTORE_PASSWORD
-          MYAPP_UPLOAD_KEY_PASSWORD=$CM_KEY_ALIAS_PASSWORD
-          PROPS
+          echo $CM_KEYSTORE | base64 -d > android/app/keystore.jks
+          echo "MYAPP_UPLOAD_STORE_FILE=keystore.jks" >> android/gradle.properties
+          echo "MYAPP_UPLOAD_KEY_ALIAS=$CM_KEY_ALIAS" >> android/gradle.properties
+          echo "MYAPP_UPLOAD_STORE_PASSWORD=$CM_KEYSTORE_PASSWORD" >> android/gradle.properties
+          echo "MYAPP_UPLOAD_KEY_PASSWORD=$CM_KEY_ALIAS_PASSWORD" >> android/gradle.properties
       - name: Configure signing in build.gradle
-        script: |
-          cd android
-          python3 << 'PYEOF'
-          with open('app/build.gradle', 'r') as f:
-              c = f.read()
-
-          signing_config = '''    signingConfigs {
-              release {
-                  storeFile file(MYAPP_UPLOAD_STORE_FILE)
-                  storePassword MYAPP_UPLOAD_STORE_PASSWORD
-                  keyAlias MYAPP_UPLOAD_KEY_ALIAS
-                  keyPassword MYAPP_UPLOAD_KEY_PASSWORD
-              }
-          }
-      buildTypes {'''
-          c = c.replace('    buildTypes {', signing_config, 1)
-          c = c.replace('signingConfig signingConfigs.debug', 'signingConfig signingConfigs.release')
-
-          with open('app/build.gradle', 'w') as f:
-              f.write(c)
-          print("signing configurado")
-          PYEOF
+        script: python3 scripts/patch_gradle.py
       - name: Build Android AAB
         script: |
           cd android
