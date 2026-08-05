@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Platform, View, Text, Pressable, StyleSheet, SafeAreaView, Animated, Modal, TextInput } from 'react-native';
+import { Platform, View, Text, Pressable, StyleSheet, SafeAreaView, Animated, Modal, TextInput, Image, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
@@ -50,6 +50,10 @@ export default function ConversorScreen() {
   const [modalMarca, setModalMarca] = useState(false);
   const [textoMarca, setTextoMarca] = useState('');
   const [modalFirma, setModalFirma] = useState(false);
+  const [modalImagenPdf, setModalImagenPdf] = useState(false);
+  const [imagenesPdf, setImagenesPdf] = useState<{ uri: string }[]>([]);
+  const [tamanoPagina, setTamanoPagina] = useState<'A4' | 'Carta'>('A4');
+  const [orientacionPdf, setOrientacionPdf] = useState<'vertical' | 'horizontal'>('vertical');
   const [toast, setToast] = useState<{ tipo: ToastTipo; mensaje: string } | null>(null);
   const anim = useRef(new Animated.Value(0)).current;
   const toastAnim = useRef(new Animated.Value(0)).current;
@@ -68,21 +72,59 @@ export default function ConversorScreen() {
   };
 
   const convertirImagenAPdf = async () => {
-    const result = await DocumentPicker.getDocumentAsync({ type: 'image/*' });
-    if (result.canceled) return;
+    const result = await DocumentPicker.getDocumentAsync({ type: 'image/*', multiple: true });
+    if (result.canceled || result.assets.length === 0) return;
+    setImagenesPdf(result.assets.map((a) => ({ uri: a.uri })));
+    setTamanoPagina('A4');
+    setOrientacionPdf('vertical');
+    setModalImagenPdf(true);
+  };
+
+  const agregarMasImagenes = async () => {
+    const result = await DocumentPicker.getDocumentAsync({ type: 'image/*', multiple: true });
+    if (result.canceled || result.assets.length === 0) return;
+    setImagenesPdf((prev) => [...prev, ...result.assets.map((a) => ({ uri: a.uri }))]);
+  };
+
+  const quitarImagenPdf = (idx: number) => {
+    setImagenesPdf((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const moverImagenPdf = (idx: number, direccion: -1 | 1) => {
+    setImagenesPdf((prev) => {
+      const nuevo = [...prev];
+      const destino = idx + direccion;
+      if (destino < 0 || destino >= nuevo.length) return prev;
+      [nuevo[idx], nuevo[destino]] = [nuevo[destino], nuevo[idx]];
+      return nuevo;
+    });
+  };
+
+  const generarPdfDesdeImagenes = async () => {
+    if (imagenesPdf.length === 0) return;
     setCargando('imagen');
     try {
-      const base64 = await uriToBase64(result.assets[0].uri);
-      const html = `<img src="data:image/jpeg;base64,${base64}" style="width:100%;" />`;
+      const dims = tamanoPagina === 'A4'
+        ? (orientacionPdf === 'vertical' ? '210mm 297mm' : '297mm 210mm')
+        : (orientacionPdf === 'vertical' ? '216mm 279mm' : '279mm 216mm');
+      const paginasHtml = await Promise.all(
+        imagenesPdf.map(async (img) => {
+          const base64 = await uriToBase64(img.uri);
+          return `<div style="page-break-after: always; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;"><img src="data:image/jpeg;base64,${base64}" style="max-width: 100%; max-height: 100%; object-fit: contain;" /></div>`;
+        })
+      );
+      const html = `<html><head><style>@page { size: ${dims}; margin: 10mm; }</style></head><body style="margin:0;">${paginasHtml.join('')}</body></html>`;
       if (Platform.OS === 'web') {
         await Print.printAsync({ html });
       } else {
         const { uri: pdfUri } = await Print.printToFileAsync({ html });
         await Sharing.shareAsync(pdfUri);
       }
-      mostrarToast('success', '¡PDF creado desde tu imagen!');
+      mostrarToast('success', `¡PDF creado con ${imagenesPdf.length} página(s)!`);
+      setModalImagenPdf(false);
+      setImagenesPdf([]);
     } catch (e) {
-      mostrarToast('error', 'No se pudo convertir la imagen.');
+      mostrarToast('error', 'No se pudo convertir las imágenes.');
     } finally {
       setCargando(null);
     }
@@ -278,6 +320,80 @@ export default function ConversorScreen() {
             </View>
           </View>
         </View>
+      </Modal>
+
+      <Modal visible={modalImagenPdf} animationType="slide">
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg }}>
+            <Text style={styles.modalTitle}>Imagen → PDF</Text>
+            <Pressable onPress={() => { setModalImagenPdf(false); setImagenesPdf([]); }}>
+              <Ionicons name="close" size={26} color={colors.textSecondary} />
+            </Pressable>
+          </View>
+
+          <ScrollView style={{ flex: 1, paddingHorizontal: Spacing.lg }}>
+            <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 10 }}>
+              {imagenesPdf.length} imagen(es) — cada una será una página, en este orden
+            </Text>
+
+            {imagenesPdf.map((img, idx) => (
+              <View key={img.uri + idx} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10, backgroundColor: colors.surface, borderRadius: Radius.md, padding: 8, borderWidth: 1, borderColor: colors.border }}>
+                <Image source={{ uri: img.uri }} style={{ width: 56, height: 56, borderRadius: Radius.sm }} resizeMode="cover" />
+                <Text style={{ flex: 1, color: colors.text, fontSize: 13 }}>Página {idx + 1}</Text>
+                <Pressable onPress={() => moverImagenPdf(idx, -1)} disabled={idx === 0} style={{ opacity: idx === 0 ? 0.3 : 1 }}>
+                  <Ionicons name="chevron-up" size={20} color={colors.textSecondary} />
+                </Pressable>
+                <Pressable onPress={() => moverImagenPdf(idx, 1)} disabled={idx === imagenesPdf.length - 1} style={{ opacity: idx === imagenesPdf.length - 1 ? 0.3 : 1 }}>
+                  <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
+                </Pressable>
+                <Pressable onPress={() => quitarImagenPdf(idx)}>
+                  <Ionicons name="trash-outline" size={20} color={colors.danger} />
+                </Pressable>
+              </View>
+            ))}
+
+            <Pressable onPress={agregarMasImagenes} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, marginBottom: 20, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.primary, borderRadius: Radius.md }}>
+              <Ionicons name="add" size={18} color={colors.primary} />
+              <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 13 }}>Agregar más imágenes</Text>
+            </Pressable>
+
+            <Text style={{ color: colors.text, fontWeight: '700', fontSize: 13, marginBottom: 8 }}>Tamaño de página</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+              {(['A4', 'Carta'] as const).map((t) => (
+                <Pressable
+                  key={t}
+                  onPress={() => setTamanoPagina(t)}
+                  style={{ flex: 1, paddingVertical: 10, borderRadius: Radius.md, alignItems: 'center', backgroundColor: tamanoPagina === t ? colors.primary : colors.surface, borderWidth: 1, borderColor: tamanoPagina === t ? colors.primary : colors.border }}>
+                  <Text style={{ color: tamanoPagina === t ? '#fff' : colors.text, fontWeight: '600', fontSize: 13 }}>{t}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={{ color: colors.text, fontWeight: '700', fontSize: 13, marginBottom: 8 }}>Orientación</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 24 }}>
+              {([{ v: 'vertical', label: 'Vertical', icon: 'phone-portrait-outline' }, { v: 'horizontal', label: 'Horizontal', icon: 'phone-landscape-outline' }] as const).map((o) => (
+                <Pressable
+                  key={o.v}
+                  onPress={() => setOrientacionPdf(o.v)}
+                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: Radius.md, backgroundColor: orientacionPdf === o.v ? colors.primary : colors.surface, borderWidth: 1, borderColor: orientacionPdf === o.v ? colors.primary : colors.border }}>
+                  <Ionicons name={o.icon} size={16} color={orientacionPdf === o.v ? '#fff' : colors.textSecondary} />
+                  <Text style={{ color: orientacionPdf === o.v ? '#fff' : colors.text, fontWeight: '600', fontSize: 13 }}>{o.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </ScrollView>
+
+          <View style={{ padding: Spacing.lg }}>
+            <Pressable
+              style={[styles.modalBtnPrimary, (imagenesPdf.length === 0 || cargando === 'imagen') && { opacity: 0.6 }]}
+              onPress={generarPdfDesdeImagenes}
+              disabled={imagenesPdf.length === 0 || cargando === 'imagen'}>
+              <Text style={styles.modalBtnPrimaryText}>
+                {cargando === 'imagen' ? 'Generando...' : `Crear PDF (${imagenesPdf.length} página${imagenesPdf.length === 1 ? '' : 's'})`}
+              </Text>
+            </Pressable>
+          </View>
+        </SafeAreaView>
       </Modal>
 
       <Modal visible={modalFirma} animationType="slide">
